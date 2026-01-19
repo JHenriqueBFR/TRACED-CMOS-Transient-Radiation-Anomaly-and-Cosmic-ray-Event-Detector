@@ -86,47 +86,6 @@ class CMOSBack:
     def set_viewer_frame(self, viewer_frame):
         self.viewer_frame = viewer_frame
 
-    
-    def clustering(self, indices, epsilon):
-        if len(indices) == 0:
-            return [], []
-
-        tree = BallTree(indices, metric='chebyshev')
-        labels = np.full(len(indices), -1, dtype=int)
-        cluster_id = 0
-        visited = set()
-        N_el = []
-
-        for i, point in enumerate(indices):
-            if i in visited:
-                continue
-
-            neighbors = tree.query_radius(point.reshape(1, -1), r=epsilon)[0]
-            if len(neighbors) == 1:
-                labels[i] = -1
-                N_el.append(1)
-                continue
-
-            cluster_id += 1
-            cluster_points = set(neighbors)
-            labels[list(cluster_points)] = cluster_id
-            visited.update(cluster_points)
-            clustering = deque(cluster_points)
-            while clustering:
-                current = clustering.popleft()
-                new_neighbors = tree.query_radius(indices[current].reshape(1, -1), r=epsilon)[0]
-                for neighbor in new_neighbors:
-                    if neighbor not in visited:
-                        visited.add(neighbor)
-                        labels[neighbor] = cluster_id
-                        clustering.append(neighbor)
-            cluster_size = np.sum(labels == cluster_id)
-
-            N_el.append(cluster_size)
-
-        clusters = [indices[labels == cid] for cid in range(1, cluster_id + 1)]
-        return clusters, N_el
-
     def clusteringDBSCAN(self, indices, epsilon, min_pts):
         if len(indices) == 0:
             return [], []
@@ -198,7 +157,6 @@ class CMOSBack:
         
         fig.savefig(os.path.join(output_dir, "histogram.png"), dpi=300)
 
-        
         file_name = "detection_data.txt"
         with open(f"{output_dir}/{file_name}", "w") as file:
             file.write("Size\tCounts\n")  
@@ -326,11 +284,6 @@ class CMOSdec:
         self.method.trace_add("write", lambda *args: self.on_method_change())
         common_args = {"variable": self.method, "style": "Toolbutton"}
         
-
-        #self.seq_radio = ttk.Radiobutton(frame, text="Sequential", value="Method 1", **common_args)
-        #self.seq_radio.pack(side="left", expand=True, fill="x")
-        #CreateToolTip(self.seq_radio, "Detection and clustering. Starts from a point and considers any anomalous point in its eps-neighborhood as an associated event.")
-
         self.dbscan_radio = ttk.Radiobutton(frame, text="DBSCAN", value="Method 2", **common_args)
         self.dbscan_radio.pack(side="left", expand=True, fill="x")
         CreateToolTip(self.dbscan_radio, "Detect and categorize events as a cluster on the basis of the DBSCAN method.")
@@ -343,13 +296,13 @@ class CMOSdec:
         frame = self._create_frame(parent, "Stacking")
         frame.columnconfigure(1, weight=1)
 
-        ttk.Label(frame, text="Method:").grid(row=0, column=0, sticky="w")
-        stack_combo = ttk.Combobox(frame, textvariable=self.stacking_method_var, values=["Sum Stacking"], width=15)
-        stack_combo.grid(row=0, column=1, sticky="ew", padx=5)
-        CreateToolTip(stack_combo, "Select the type of stacking to be used.")
+        #ttk.Label(frame, text="Method:").grid(row=0, column=0, sticky="w")
+        #stack_combo = ttk.Combobox(frame, textvariable=self.stacking_method_var, values=["Sum Stacking"], width=15)
+        #stack_combo.grid(row=0, column=1, sticky="ew", padx=5)
+        #CreateToolTip(stack_combo, "Select the type of stacking to be used.")
         
         stack_check = ttk.Checkbutton(frame, text="Stack Frames", variable=self.stack_var, command=self.stack_method, style="Switch.TCheckbutton")
-        stack_check.grid(row=0, column=2, padx=5)
+        stack_check.grid(row=0, column=0, padx=5)
         CreateToolTip(stack_check, "(Experimental) Stack the frames, creating a resulting image presenting the overlay of all detections.")
 
     def _create_process_widgets(self, parent):
@@ -396,14 +349,17 @@ class CMOSdec:
 
     def stack_method(self):
         is_stacking = self.stack_var.get()
-        if is_stacking: self.method.set("stack")
-        else: self.method.set("Method 2")
+        if is_stacking: 
+            self.method.set("stack")
+        else: 
+            self.method.set("Method 2")
         
         for widget in [self.seq_radio, self.dbscan_radio, self.log_radio, self.min_pts_entry, 
                        self.subtract_mean_checkbox, self.k_value_entry, self.eps_entry, 
                        self.sigmaentry, self.crop_entry]:
             widget.config(state="disabled" if is_stacking else "normal")
-        if not is_stacking: self.on_method_change()
+        if not is_stacking: 
+            self.on_method_change()
 
     def on_method_change(self):
         method = self.method.get()
@@ -440,10 +396,7 @@ class CMOSdec:
                     raw_image = raw.raw_image_visible.copy().astype(np.float32)
                 
                 indices = np.argwhere(raw_image > matrix_threshold)
-                if self.method.get() == "Method 1":
-                    clusters, sizes = self.back.clustering(indices, self.epsilon.get())
-                else:
-                    clusters, sizes = self.back.clusteringDBSCAN(indices, self.epsilon.get(), self.min_pts.get())
+                clusters, sizes = self.back.clusteringDBSCAN(indices, self.epsilon.get(), self.min_pts.get())
                 
                 cluster_sizes_all.extend(sizes)
                 image_to_crop = np.maximum(raw_image - mean_matrix, 0) if self.subtract_mean_var.get() else raw_image
@@ -497,7 +450,8 @@ class CMOSdec:
                 sum_matrix = np.zeros_like(raw.raw_image_visible, dtype=np.float32)
 
             for idx, file_path in enumerate(file_paths):
-                if self.cancel_event.is_set(): return
+                if self.cancel_event.is_set(): 
+                    return
                 with rawpy.imread(file_path) as raw:
                     frame = raw.raw_image_visible.astype(np.float32)
                     diff = frame - mean_matrix
@@ -571,7 +525,8 @@ class CMOSdec:
     def open_output_folder(self):
         output_dir = self.output_dir.get()
         if not output_dir or not os.path.exists(output_dir):
-            messagebox.showerror("Error", "Output directory does not exist."); return
+            messagebox.showerror("Error", "Output directory does not exist."); 
+            return
         os.startfile(output_dir)
 
 
@@ -637,3 +592,4 @@ if __name__ == "__main__":
 
     app = CMOSdec(root)
     root.mainloop()
+
