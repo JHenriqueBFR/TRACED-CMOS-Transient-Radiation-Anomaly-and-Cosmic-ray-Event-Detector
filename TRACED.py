@@ -3,7 +3,6 @@ import glob
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import ttk
-from collections import deque
 import rawpy
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -11,7 +10,6 @@ import threading
 from matplotlib.figure import Figure
 from skimage.measure import label, regionprops
 from scipy.ndimage import gaussian_laplace
-from sklearn.neighbors import BallTree
 import cv2
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -86,6 +84,7 @@ class CMOSBack:
     def set_viewer_frame(self, viewer_frame):
         self.viewer_frame = viewer_frame
 
+
     def clusteringDBSCAN(self, indices, epsilon, min_pts):
         if len(indices) == 0:
             return [], []
@@ -157,6 +156,7 @@ class CMOSBack:
         
         fig.savefig(os.path.join(output_dir, "histogram.png"), dpi=300)
 
+        
         file_name = "detection_data.txt"
         with open(f"{output_dir}/{file_name}", "w") as file:
             file.write("Size\tCounts\n")  
@@ -187,7 +187,7 @@ class CMOSdec:
         self.epsilon = tk.IntVar(value=10)
         self.min_pts = tk.IntVar(value=3)
         self.k_value = tk.IntVar(value=6)
-        self.method = tk.StringVar(value="Method 2")
+        self.method = tk.StringVar(value="DBSCAN")
         self.sigma = tk.IntVar(value=6)
         self.subtract_mean_var = tk.BooleanVar(value=True)
         self.cancel_event = threading.Event()
@@ -225,7 +225,7 @@ class CMOSdec:
 
         self._create_display_widgets(main_frame)
         self._create_console_widgets(self.root)
-        
+        self.on_method_change()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def _create_frame(self, parent, text):
@@ -273,22 +273,22 @@ class CMOSdec:
         ttk.Label(frame, text="Crop Side (px):").grid(row=0, column=0, sticky="w")
         self.crop_entry = ttk.Entry(frame, textvariable=self.crop_size, width=8)
         self.crop_entry.grid(row=0, column=1, sticky="ew", padx=5)
-        CreateToolTip(self.crop_entry, "The side length for a square crop for each detected event.")
+        CreateToolTip(self.crop_entry, "The side length for a square crop of each detected event.")
 
         self.subtract_mean_checkbox = ttk.Checkbutton(frame, text="Mean Subtraction", variable=self.subtract_mean_var)
         self.subtract_mean_checkbox.grid(row=1, column=0, columnspan=2, sticky="w", pady=5)
-        CreateToolTip(self.subtract_mean_checkbox, "Subtract the calculated mean from each image crop for better visibility.")
+        CreateToolTip(self.subtract_mean_checkbox, "Subtract the calculated mean from each image.")
 
     def _create_method_widgets(self, parent):
         frame = self._create_frame(parent, "Method")
         self.method.trace_add("write", lambda *args: self.on_method_change())
         common_args = {"variable": self.method, "style": "Toolbutton"}
         
-        self.dbscan_radio = ttk.Radiobutton(frame, text="DBSCAN", value="Method 2", **common_args)
+        self.dbscan_radio = ttk.Radiobutton(frame, text="DBSCAN", value="DBSCAN", **common_args)
         self.dbscan_radio.pack(side="left", expand=True, fill="x")
         CreateToolTip(self.dbscan_radio, "Detect and categorize events as a cluster on the basis of the DBSCAN method.")
 
-        self.log_radio = ttk.Radiobutton(frame, text="LoG", value="Method 3", **common_args)
+        self.log_radio = ttk.Radiobutton(frame, text="LoG", value="LoG", **common_args)
         self.log_radio.pack(side="left", expand=True, fill="x")
         CreateToolTip(self.log_radio, "LoG detection (Experimental): Uses the convolution of the image with a Laplacian of Gaussian kernel for detection of events.")
 
@@ -296,11 +296,6 @@ class CMOSdec:
         frame = self._create_frame(parent, "Stacking")
         frame.columnconfigure(1, weight=1)
 
-        #ttk.Label(frame, text="Method:").grid(row=0, column=0, sticky="w")
-        #stack_combo = ttk.Combobox(frame, textvariable=self.stacking_method_var, values=["Sum Stacking"], width=15)
-        #stack_combo.grid(row=0, column=1, sticky="ew", padx=5)
-        #CreateToolTip(stack_combo, "Select the type of stacking to be used.")
-        
         stack_check = ttk.Checkbutton(frame, text="Stack Frames", variable=self.stack_var, command=self.stack_method, style="Switch.TCheckbutton")
         stack_check.grid(row=0, column=0, padx=5)
         CreateToolTip(stack_check, "(Experimental) Stack the frames, creating a resulting image presenting the overlay of all detections.")
@@ -346,32 +341,70 @@ class CMOSdec:
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.console_text.config(yscrollcommand=scrollbar.set)
     
-
     def stack_method(self):
         is_stacking = self.stack_var.get()
-        if is_stacking: 
+
+        if is_stacking:
             self.method.set("stack")
-        else: 
-            self.method.set("Method 2")
-        
-        for widget in [self.seq_radio, self.dbscan_radio, self.log_radio, self.min_pts_entry, 
-                       self.subtract_mean_checkbox, self.k_value_entry, self.eps_entry, 
-                       self.sigmaentry, self.crop_entry]:
-            widget.config(state="disabled" if is_stacking else "normal")
-        if not is_stacking: 
+
+            for widget in [
+                self.dbscan_radio,
+                self.log_radio,
+                self.min_pts_entry,
+                self.subtract_mean_checkbox,
+                self.k_value_entry,
+                self.eps_entry,
+                self.sigmaentry,
+                self.crop_entry
+            ]:
+                widget.config(state="disabled")
+
+        else:
+            for widget in [
+                self.dbscan_radio,
+                self.log_radio,
+                self.min_pts_entry,
+                self.subtract_mean_checkbox,
+                self.k_value_entry,
+                self.eps_entry,
+                self.sigmaentry,
+                self.crop_entry
+            ]:
+                widget.config(state="normal")
+
+            self.method.set("DBSCAN")
             self.on_method_change()
+
+
 
     def on_method_change(self):
         method = self.method.get()
-        is_method1_or_2 = method in ["Method 1", "Method 2"]
-        is_method2 = method == "Method 2"
-        is_method3 = method == "Method 3"
-        
-        self.k_value_entry.config(state="normal" if is_method1_or_2 else "disabled")
-        self.eps_entry.config(state="normal" if is_method1_or_2 else "disabled")
-        self.subtract_mean_checkbox.config(state="normal" if is_method1_or_2 else "disabled")
-        self.min_pts_entry.config(state="normal" if is_method2 else "disabled")
-        self.sigmaentry.config(state="normal" if is_method3 else "disabled")
+
+
+        widgets = [
+            self.k_value_entry,
+            self.eps_entry,
+            self.min_pts_entry,
+            self.sigmaentry,
+            self.subtract_mean_checkbox,
+            self.crop_entry
+        ]
+
+        for w in widgets:
+            w.config(state="disabled")
+
+
+        if method == "DBSCAN":
+            self.k_value_entry.config(state="normal")
+            self.eps_entry.config(state="normal")
+            self.min_pts_entry.config(state="normal")
+            self.subtract_mean_checkbox.config(state="normal")
+            self.crop_entry.config(state="normal")
+
+        elif method == "LoG":
+            self.sigmaentry.config(state="normal")
+            self.crop_entry.config(state="normal")
+
     
     def process_images(self):
         try:
@@ -450,8 +483,7 @@ class CMOSdec:
                 sum_matrix = np.zeros_like(raw.raw_image_visible, dtype=np.float32)
 
             for idx, file_path in enumerate(file_paths):
-                if self.cancel_event.is_set(): 
-                    return
+                if self.cancel_event.is_set(): return
                 with rawpy.imread(file_path) as raw:
                     frame = raw.raw_image_visible.astype(np.float32)
                     diff = frame - mean_matrix
@@ -487,9 +519,8 @@ class CMOSdec:
         self.console_log("Processing started...")
 
         target_map = {
-            "Method 1": self.process_images,
-            "Method 2": self.process_images,
-            "Method 3": self.process_image_LoG,
+            "DBSCAN": self.process_images,
+            "LoG": self.process_image_LoG,
             "stack": self.stack_images
         }
 
@@ -508,19 +539,23 @@ class CMOSdec:
         self.processing = False
         self.start_button.config(state="normal")
         self.cancel_button.config(state="disabled")
-        if cancelled: self.console_log("Processing canceled.")
+        if cancelled: 
+            self.console_log("Processing canceled.")
         
     def on_close(self):
-        if self.processing: self.cancel_processing()
+        if self.processing: 
+            self.cancel_processing()
         self.root.destroy()
 
     def browse_input(self):
         directory = filedialog.askdirectory()
-        if directory: self.input_dir.set(directory)
+        if directory: 
+            self.input_dir.set(directory)
 
     def browse_output(self):
         directory = filedialog.askdirectory()
-        if directory: self.output_dir.set(directory)
+        if directory: 
+            self.output_dir.set(directory)
 
     def open_output_folder(self):
         output_dir = self.output_dir.get()
@@ -576,7 +611,8 @@ class CreateToolTip(object):
     def hidetip(self): 
         tw = self.tw; 
         self.tw= None; 
-        if tw: tw.destroy()
+        if tw: 
+            tw.destroy()
 
 if __name__ == "__main__":
     root = tk.Tk()
@@ -592,4 +628,3 @@ if __name__ == "__main__":
 
     app = CMOSdec(root)
     root.mainloop()
-
